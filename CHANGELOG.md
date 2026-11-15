@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## 3.4.1
 
-First release from this repository. It continues Lee Valentine's module,
-whose history is intact here; his repository has had no commit since April
-2024.
+First release from this repository, carrying on from upstream's 3.4. It
+continues Lee Valentine's module, whose history is intact here; his
+repository has had no commit since April 2024.
 
 ### Added
 
