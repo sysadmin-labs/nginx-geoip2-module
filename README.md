@@ -29,17 +29,6 @@ say into variables, for HTTP requests and for stream connections.
 nginx's own `geoip` module reads the legacy format MaxMind stopped
 publishing in 2019. This reads the current one.
 
-## Where this comes from
-
-Lee Valentine's module, continued here with its history intact. His
-repository has had no commit since April 2024 and the FreeBSD port builds
-from it, which is the reason for this one.
-
-Nothing in the module itself needed changing so far. What is new is the
-scaffolding: a build against the releases the ports ship, the sanitizers,
-valgrind, CodeQL, a reload gate and a FreeBSD run, and a test suite that
-asks real questions of MaxMind's own test database.
-
 ## Requirements
 
 nginx 1.28 or newer, and libmaxminddb. On FreeBSD that is
