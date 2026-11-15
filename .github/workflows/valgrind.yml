@@ -28,6 +28,9 @@ jobs:
         with:
           packages: valgrind
 
+      - name: Fetch MaxMind's test database
+        run: ci/testdb.sh t/data/GeoIP2-City-Test.mmdb
+
       - name: Build nginx
         run: |
           . .github/versions.env

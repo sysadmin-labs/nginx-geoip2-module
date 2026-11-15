@@ -34,6 +34,7 @@ jobs:
             pkg install -y git pcre2 curl p5-Test-Nginx libmaxminddb
           run: |
             . .github/versions.env
+            ci/testdb.sh t/data/GeoIP2-City-Test.mmdb
             ci/build.sh "$NGINX_VERSION" "$HOME/nginx"
             # the job runs as root, and Test::Nginx then writes "user
             # root;" into its configuration.  root has no group of that

@@ -12,3 +12,6 @@ ci-work/
 *~
 *.swp
 *.swo
+
+# fetched by ci/testdb.sh, not kept here
+t/data/

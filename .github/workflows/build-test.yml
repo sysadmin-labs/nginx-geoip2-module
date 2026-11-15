@@ -47,6 +47,9 @@ jobs:
 
       - uses: ./.github/actions/setup
 
+      - name: Fetch MaxMind's test database
+        run: ci/testdb.sh t/data/GeoIP2-City-Test.mmdb
+
       - name: Build nginx ${{ matrix.nginx }}
         run: ci/build.sh '${{ matrix.nginx }}' "$HOME/nginx"
 
