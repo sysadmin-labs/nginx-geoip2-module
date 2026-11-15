@@ -23,5 +23,10 @@ PINS=$SRC/.github/versions.env
 
 url=https://raw.githubusercontent.com/maxmind/MaxMind-DB/$MMDB_TEST_COMMIT/test-data/GeoIP2-City-Test.mmdb
 
+# curl will not create the directory and fails with exit 23 if it is
+# missing, which reads as a download error rather than as what it is.
+dir=$(dirname "$OUT")
+[ "$dir" = "$OUT" ] || mkdir -p "$dir"
+
 "$SRC/ci/fetch-verify.sh" "$url" "$MMDB_TEST_SHA256" "$OUT"
 echo "ci/testdb.sh: $OUT"
