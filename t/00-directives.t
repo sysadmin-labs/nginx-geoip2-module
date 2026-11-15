@@ -16,6 +16,13 @@ our $HttpConfig = qq{
     }
 };
 
+# geoip2_proxy and geoip2_proxy_recursive are http-level directives, not
+# server-level, so they belong here and not beside a location.
+our $HttpConfigProxy = $HttpConfig . q{
+    geoip2_proxy           127.0.0.0/8;
+    geoip2_proxy_recursive on;
+};
+
 repeat_each(1);
 run_tests();
 
@@ -74,10 +81,8 @@ GET /t
 
 
 === TEST 5: geoip2_proxy and its recursive form parse
---- http_config eval: $::HttpConfig
+--- http_config eval: $::HttpConfigProxy
 --- config
-    geoip2_proxy           127.0.0.0/8;
-    geoip2_proxy_recursive on;
     location /t { return 200 "ok\n"; }
 --- request
 GET /t
