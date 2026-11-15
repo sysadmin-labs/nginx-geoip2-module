@@ -1,152 +1,170 @@
-Description
-===========
+# nginx-geoip2-module
 
-**ngx_http_geoip2_module** - creates variables with values from the maxmind geoip2 databases based on the client IP (default) or from a specific variable (supports both IPv4 and IPv6)
+[![Build][build-test-badge]][build-test-link]
+[![Lint][lint-badge]][lint-link]
+[![CodeQL][codeql-badge]][codeql-link]
+[![A/UBSan][sanitizers-badge]][sanitizers-link]
+[![Valgrind][valgrind-badge]][valgrind-link]
+[![Reload][reload-badge]][reload-link]
+[![FreeBSD][freebsd-badge]][freebsd-link]
 
-The module now supports nginx streams and can be used in the same way the http module can be used.
+[build-test-badge]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/build-test.yml/badge.svg
+[build-test-link]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/build-test.yml
+[lint-badge]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/lint.yml/badge.svg
+[lint-link]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/lint.yml
+[codeql-badge]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/codeql.yml/badge.svg
+[codeql-link]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/codeql.yml
+[sanitizers-badge]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/sanitizers.yml/badge.svg
+[sanitizers-link]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/sanitizers.yml
+[valgrind-badge]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/valgrind.yml/badge.svg
+[valgrind-link]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/valgrind.yml
+[reload-badge]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/reload.yml/badge.svg
+[reload-link]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/reload.yml
+[freebsd-badge]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/freebsd.yml/badge.svg
+[freebsd-link]: https://github.com/sysadmin-labs/nginx-geoip2-module/actions/workflows/freebsd.yml
 
-## Installing
-First install [libmaxminddb](https://github.com/maxmind/libmaxminddb) as described in its [README.md
-file](https://github.com/maxmind/libmaxminddb/blob/main/README.md#installing-from-a-tarball).
+Read MaxMind's GeoIP2 and GeoLite2 databases from nginx and put what they
+say into variables, for HTTP requests and for stream connections.
 
-#### Download nginx source
+nginx's own `geoip` module reads the legacy format MaxMind stopped
+publishing in 2019. This reads the current one.
+
+## Where this comes from
+
+Lee Valentine's module, continued here with its history intact. His
+repository has had no commit since April 2024 and the FreeBSD port builds
+from it, which is the reason for this one.
+
+Nothing in the module itself needed changing so far. What is new is the
+scaffolding: a build against the releases the ports ship, the sanitizers,
+valgrind, CodeQL, a reload gate and a FreeBSD run, and a test suite that
+asks real questions of MaxMind's own test database.
+
+## Requirements
+
+nginx 1.28 or newer, and libmaxminddb. On FreeBSD that is
+`net/libmaxminddb`, on Debian and Ubuntu `libmaxminddb-dev`.
+
+A database to read. The free GeoLite2 files need a MaxMind account; the
+licensed GeoIP2 ones do not come from here either. Neither is in this
+repository, and the test suite uses MaxMind's small test database instead,
+fetched by `ci/testdb.sh`.
+
+## Building
+
+```sh
+./configure --add-module=/path/to/nginx-geoip2-module
 ```
-wget http://nginx.org/download/nginx-VERSION.tar.gz
-tar zxvf nginx-VERSION.tar.gz
-cd nginx-VERSION
-```
 
-##### To build as a dynamic module (nginx 1.9.11+):
-```
-./configure --with-compat --add-dynamic-module=/path/to/ngx_http_geoip2_module
-make modules
-```
+Both the HTTP and the stream module are built. As loadable modules,
+`--add-dynamic-module=` and then
 
-This will produce ```objs/ngx_http_geoip2_module.so```. It can be copied to your nginx module path manually if you wish.
-
-Add the following line to your nginx.conf:
-```
+```nginx
 load_module modules/ngx_http_geoip2_module.so;
+load_module modules/ngx_stream_geoip2_module.so;
 ```
 
-##### To build as a static module:
-```
-./configure --add-module=/path/to/ngx_http_geoip2_module
-make
-make install
-```
+## Quick start
 
-##### If you need stream support, make sure to compile with stream:
-```
-./configure --add-dynamic-module=/path/to/ngx_http_geoip2_module --with-stream
-OR
-./configure --add-module=/path/to/ngx_http_geoip2_module --with-stream
-```
-
-
-## Download Maxmind GeoLite2 Database (optional)
-The free GeoLite2 databases are available from [Maxminds website](http://dev.maxmind.com/geoip/geoip2/geolite2/) (requires signing up)
-
-## Example Usage:
-```
+```nginx
 http {
-    ...
-    geoip2 /etc/maxmind-country.mmdb {
-        auto_reload 5m;
-        $geoip2_metadata_country_build metadata build_epoch;
-        $geoip2_data_country_code default=US source=$variable_with_ip country iso_code;
-        $geoip2_data_country_name country names en;
+    geoip2 /usr/local/share/GeoIP/GeoLite2-Country.mmdb {
+        auto_reload 60m;
+        $geoip2_country_code default=XX country iso_code;
+        $geoip2_country_name              country names en;
     }
 
-    geoip2 /etc/maxmind-city.mmdb {
-        $geoip2_data_city_name default=London city names en;
+    geoip2 /usr/local/share/GeoIP/GeoLite2-City.mmdb {
+        $geoip2_city      city names en;
+        $geoip2_latitude  location latitude;
+        $geoip2_longitude location longitude;
     }
-    ....
 
-    fastcgi_param COUNTRY_CODE $geoip2_data_country_code;
-    fastcgi_param COUNTRY_NAME $geoip2_data_country_name;
-    fastcgi_param CITY_NAME    $geoip2_data_city_name;
-    ....
-}
-
-stream {
-    ...
-    geoip2 /etc/maxmind-country.mmdb {
-        $geoip2_data_country_code default=US source=$remote_addr country iso_code;
+    server {
+        location / {
+            return 200 "$geoip2_country_code $geoip2_city\n";
+        }
     }
-    ...
 }
 ```
 
-##### Metadata:
-Retrieve metadata regarding the geoip database.
-```
-$variable_name metadata <field>
-```
-Available fields:
-  - build_epoch: the build timestamp of the maxmind database.
-  - last_check: the last time the database was checked for changes (when using auto_reload)
-  - last_change: the last time the database was reloaded (when using auto_reload)
+The path after a variable name is the path through the database's own
+structure, so `country names en` is the English country name and
+`subdivisions 0 iso_code` the first subdivision's code. What a database
+holds is in MaxMind's documentation for that database.
 
-##### Autoreload (default: disabled):
-Enabling auto reload will have nginx check the modification time of the database at the specified
-interval and reload it if it has changed.
-```
-auto_reload <interval>
-```
+## Directives
 
-##### GeoIP:
-```
-$variable_name [default=<value] [source=$variable_with_ip] path ...
-```
-If default is not specified, the variable will be empty if not found.
+### geoip2
 
-If source is not specified, $remote_addr will be used to perform the lookup.
+|Syntax |`geoip2 path { ... }`|
+|-------|---|
+|Default|none|
+|Context|http, stream|
 
-To find the path of the data you want (eg: country names en), use the [mmdblookup tool](https://maxmind.github.io/libmaxminddb/mmdblookup.html):
+Open a database and declare the variables read from it. One block per
+database; several blocks are fine.
+
+Inside the block:
 
 ```
-$ mmdblookup --file /usr/share/GeoIP/GeoIP2-Country.mmdb --ip 8.8.8.8
-
-  {
-    "country":
-      {
-        "geoname_id":
-          6252001 <uint32>
-        "iso_code":
-          "US" <utf8_string>
-        "names":
-          {
-            "de":
-              "USA" <utf8_string>
-            "en":
-              "United States" <utf8_string>
-          }
-      }
-  }
-
-$ mmdblookup --file /usr/share/GeoIP/GeoIP2-Country.mmdb --ip 8.8.8.8 country names en
-
-  "United States" <utf8_string>
+auto_reload <time>;
+$variable [default=<value>] [source=$other] <path...>;
 ```
 
-This translates to:
+`auto_reload` re-reads the file when it changes on disk, which is how a
+monthly database update takes effect without a reload. `default=` is used
+when the lookup finds nothing. `source=` names the variable holding the
+address to look up; without it `$remote_addr` is used.
 
-```
-$country_name "default=United States" source=$remote_addr country names en
+`metadata` in place of a lookup path reads the database's own metadata
+rather than an address:
+
+```nginx
+geoip2 /usr/local/share/GeoIP/GeoLite2-City.mmdb {
+    auto_reload 60m;
+    $geoip2_build  metadata build_epoch;
+    $geoip2_check  metadata last_check;
+    $geoip2_change metadata last_change;
+}
 ```
 
-##### Additional Commands:
-These commands works the same as the original ngx_http_geoip_module documented here: http://nginx.org/en/docs/http/ngx_http_geoip_module.html#geoip_proxy.
+which is how a monitoring endpoint can report how old the database is.
 
-However, if you provide the `source=$variable_with_ip` option on a variable, these settings will be ignored for that particular variable.
+### geoip2\_proxy
 
-```
-geoip2_proxy < cidr >
-```
-Defines trusted addresses.  When a request comes from a trusted address, an address from the "X-Forwarded-For" request header field will be used instead.
+|Syntax |`geoip2_proxy address \| CIDR`|
+|-------|---|
+|Default|none|
+|Context|http|
 
+Trust `X-Forwarded-For` from these addresses and look up what it says
+instead of the peer. May be given more than once.
+
+### geoip2\_proxy\_recursive
+
+|Syntax |`geoip2_proxy_recursive on \| off`|
+|-------|---|
+|Default|`off`|
+|Context|http|
+
+Walk `X-Forwarded-For` from the right until an address outside
+`geoip2_proxy` is found, rather than taking the last entry.
+
+## Testing
+
+```sh
+ci/testdb.sh t/data/GeoIP2-City-Test.mmdb
+ci/build.sh 1.30.6 /tmp/nginx-test
+TEST_NGINX_BINARY=/tmp/nginx-test/sbin/nginx prove -r t/
+ci/reload.sh /tmp/nginx-test/sbin/nginx
 ```
-geoip2_proxy_recursive < on | off >
-```
-If recursive search is disabled then instead of the original client address that matches one of the trusted addresses, the last address sent in "X-Forwarded-For" will be used. If recursive search is enabled then instead of the original client address that matches one of the trusted addresses, the last non-trusted address sent in "X-Forwarded-For" will be used.
+
+`ci/testdb.sh` fetches MaxMind's MIT-licensed test database, pinned by
+commit and digest. The suite then asks for an address that is in it and
+checks the country, a nested city lookup, a miss with and without a
+default, and that a database which is not there is refused at startup.
+
+## License
+
+BSD 2-Clause. See `LICENSE`.
