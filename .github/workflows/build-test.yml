@@ -72,6 +72,9 @@ jobs:
 
       - uses: ./.github/actions/setup
 
+      - name: Fetch MaxMind's test database
+        run: ci/testdb.sh t/data/GeoIP2-City-Test.mmdb
+
       - name: Build the module as a loadable object
         run: ci/build.sh '${{ needs.pins.outputs.version }}' "$HOME/nginx" dynamic
 
