@@ -146,13 +146,23 @@ Walk `X-Forwarded-For` from the right until an address outside
 ci/testdb.sh t/data/GeoIP2-City-Test.mmdb
 ci/build.sh 1.30.6 /tmp/nginx-test
 TEST_NGINX_BINARY=/tmp/nginx-test/sbin/nginx prove -r t/
+ci/stream.sh /tmp/nginx-test/sbin/nginx t/data/MaxMind-DB-test-decoder.mmdb
 ci/reload.sh /tmp/nginx-test/sbin/nginx
 ```
 
-`ci/testdb.sh` fetches MaxMind's MIT-licensed test database, pinned by
-commit and digest. The suite then asks for an address that is in it and
-checks the country, a nested city lookup, a miss with and without a
-default, and that a database which is not there is refused at startup.
+`ci/testdb.sh` fetches MaxMind's MIT-licensed test databases, pinned by
+commit and digest: the city database, and the decoder database that
+carries one field of every mmdb data type. The suite asks for an address
+that is in the city database and checks the country, a nested city
+lookup, a miss with and without a default, and that a database which is
+not there is refused at startup. Against the decoder database it checks
+every numeric conversion, including the uint128 one that writes
+thirty-four characters.
+
+`ci/stream.sh` is the stream module's gate. Test::Nginx speaks HTTP, so
+the suite reaches only the HTTP half; this one puts a lookup through a
+stream connection and checks the answer. Build with `--with-stream`, which
+`ci/build.sh` passes.
 
 ## License
 
