@@ -65,14 +65,27 @@ static void ngx_stream_geoip2_cleanup(void *data);
 static ngx_int_t ngx_stream_geoip2_init(ngx_conf_t *cf);
 
 
-#define FORMAT(fmt, ...) do {                               \
-        p = ngx_palloc(s->connection->pool, NGX_OFF_T_LEN); \
-        if (p == NULL) {                                    \
-            return NGX_ERROR;                               \
-        }                                                   \
-        v->len = ngx_sprintf(p, fmt, __VA_ARGS__) - p;      \
-        v->data = p;                                        \
+/*
+ * One allocation per value, sized for the conversion that writes into it.
+ * NGX_OFF_T_LEN was used for every type here and is twenty bytes on a
+ * 64-bit host: too small for the uint128 forms below, which write
+ * thirty-four, and for "%.5f", which nginx renders through (int64_t) and
+ * so can reach twenty-seven.  ngx_snprintf bounds the write as well, so a
+ * size that is wrong cannot reach past the allocation.
+ */
+#define FORMAT(size, fmt, ...) do {                                 \
+        p = ngx_pnalloc(s->connection->pool, size);                 \
+        if (p == NULL) {                                            \
+            return NGX_ERROR;                                       \
+        }                                                           \
+        v->len = ngx_snprintf(p, size, fmt, __VA_ARGS__) - p;       \
+        v->data = p;                                                \
 } while (0)
+
+/* "-", nineteen digits from (int64_t), "." and five fractional digits */
+#define GEOIP2_FLOAT_LEN     (NGX_INT64_LEN + sizeof(".00000") - 1)
+/* "0x" and two hex digits for each of the sixteen bytes */
+#define GEOIP2_UINT128_LEN   (sizeof("0x") - 1 + 16 * 2)
 
 static ngx_command_t  ngx_stream_geoip2_commands[] = {
 
@@ -193,7 +206,7 @@ ngx_stream_geoip2_variable(ngx_stream_session_t *s, ngx_stream_variable_value_t 
 
     switch (entry_data.type) {
         case MMDB_DATA_TYPE_BOOLEAN:
-            FORMAT("%d", entry_data.boolean);
+            FORMAT(NGX_INT_T_LEN, "%d", entry_data.boolean);
             break;
         case MMDB_DATA_TYPE_UTF8_STRING:
             v->len = entry_data.data_size;
@@ -212,35 +225,44 @@ ngx_stream_geoip2_variable(ngx_stream_session_t *s, ngx_stream_variable_value_t 
             ngx_memcpy(v->data, (u_char *) entry_data.bytes, v->len);
             break;
         case MMDB_DATA_TYPE_FLOAT:
-            FORMAT("%.5f", entry_data.float_value);
+            FORMAT(GEOIP2_FLOAT_LEN, "%.5f", entry_data.float_value);
             break;
         case MMDB_DATA_TYPE_DOUBLE:
-            FORMAT("%.5f", entry_data.double_value);
+            FORMAT(GEOIP2_FLOAT_LEN, "%.5f", entry_data.double_value);
             break;
         case MMDB_DATA_TYPE_UINT16:
-            FORMAT("%uD", entry_data.uint16);
+            FORMAT(NGX_INT32_LEN, "%uD", entry_data.uint16);
             break;
         case MMDB_DATA_TYPE_UINT32:
-            FORMAT("%uD", entry_data.uint32);
+            FORMAT(NGX_INT32_LEN, "%uD", entry_data.uint32);
             break;
         case MMDB_DATA_TYPE_INT32:
-            FORMAT("%D", entry_data.int32);
+            FORMAT(NGX_INT32_LEN, "%D", entry_data.int32);
             break;
         case MMDB_DATA_TYPE_UINT64:
-            FORMAT("%uL", entry_data.uint64);
+            FORMAT(NGX_INT64_LEN, "%uL", entry_data.uint64);
             break;
         case MMDB_DATA_TYPE_UINT128: ;
 #if MMDB_UINT128_IS_BYTE_ARRAY
-            uint8_t *val = (uint8_t *) entry_data.uint128;
-            FORMAT("0x%02x%02x%02x%02x%02x%02x%02x%02x"
-                   "%02x%02x%02x%02x%02x%02x%02x%02x",
-                   val[0], val[1], val[2], val[3],
-                   val[4], val[5], val[6], val[7],
-                   val[8], val[9], val[10], val[11],
-                   val[12], val[13], val[14], val[15]);
+            /*
+             * "%02x" is not a conversion in nginx's printf: "x" only sets
+             * the hex flag and leaves the type to the next character, so
+             * the sixteen arguments were never read and the format wrote a
+             * row of per-cent signs.  ngx_hex_dump writes the bytes.
+             */
+            p = ngx_pnalloc(s->connection->pool, GEOIP2_UINT128_LEN);
+            if (p == NULL) {
+                return NGX_ERROR;
+            }
+
+            v->data = p;
+            *p++ = '0';
+            *p++ = 'x';
+            p = ngx_hex_dump(p, (u_char *) entry_data.uint128, 16);
+            v->len = p - v->data;
 #else
             mmdb_uint128_t val = entry_data.uint128;
-            FORMAT("0x%016uxL%016uxL",
+            FORMAT(GEOIP2_UINT128_LEN, "0x%016uxL%016uxL",
                    (uint64_t) (val >> 64), (uint64_t) val);
 #endif
             break;
@@ -281,11 +303,11 @@ ngx_stream_geoip2_metadata(ngx_stream_session_t *s, ngx_stream_variable_value_t 
     u_char                        *p;
 
     if (ngx_strncmp(metadata->metavalue.data, "build_epoch", 11) == 0) {
-        FORMAT("%uL", database->mmdb.metadata.build_epoch);
+        FORMAT(NGX_INT64_LEN, "%uL", database->mmdb.metadata.build_epoch);
     } else if (ngx_strncmp(metadata->metavalue.data, "last_check", 10) == 0) {
-        FORMAT("%T", database->last_check);
+        FORMAT(NGX_TIME_T_LEN, "%T", database->last_check);
     } else if (ngx_strncmp(metadata->metavalue.data, "last_change", 11) == 0) {
-        FORMAT("%T", database->last_change);
+        FORMAT(NGX_TIME_T_LEN, "%T", database->last_change);
     } else {
         v->not_found = 1;
         return NGX_OK;
@@ -447,7 +469,16 @@ ngx_stream_geoip2_add_variable(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
     nelts = (int) cf->args->nelts;
     database = (ngx_stream_geoip2_db_t *) conf;
 
-    if (nelts > 0 && value[1].len == 8 && ngx_strncmp(value[1].data, "metadata", 8) == 0) {
+    /*
+     * nelts counts the words on this line, value[0] being the
+     * variable name, so value[1] only exists from two words on.
+     * cf->args comes from ngx_array_create and is not zeroed:
+     * reading it at nelts == 1 took whatever the previous line
+     * had left there.
+     */
+    if (nelts > 1 && value[1].len == 8
+        && ngx_strncmp(value[1].data, "metadata", 8) == 0)
+    {
         return ngx_stream_geoip2_add_variable_metadata(cf, database);
     }
 
@@ -469,6 +500,16 @@ ngx_stream_geoip2_add_variable_metadata(ngx_conf_t *cf, ngx_stream_geoip2_db_t *
 
     value = cf->args->elts;
     name = value[0];
+
+    /* "$name metadata <field>" is three words; without the field there is
+     * no value[2] to read. */
+    if (cf->args->nelts < 3) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "\"metadata\" needs the name of a field, one of "
+                           "\"build_epoch\", \"last_check\" or "
+                           "\"last_change\"");
+        return NGX_CONF_ERROR;
+    }
 
     metadata->database = database;
     metadata->metavalue = value[2];
@@ -665,6 +706,16 @@ ngx_stream_geoip2_log_handler(ngx_stream_session_t *s)
         database->last_change = ngx_file_mtime(&fi);
         MMDB_close(&database->mmdb);
         database->mmdb = tmpdb;
+
+        /*
+         * The one-entry lookup cache below still holds the last client's
+         * address and a result whose entry offset points into the mapping
+         * that was just closed.  Left alone, the next request from that
+         * same address skips the lookup and reads the new file at the old
+         * file's offset.  Clearing both sends it through MMDB_lookup again.
+         */
+        ngx_memzero(&database->address, sizeof(database->address));
+        ngx_memzero(&database->result, sizeof(database->result));
 
         ngx_log_error(NGX_LOG_INFO, s->connection->log, 0,
                       "Reload MMDB \"%s\"",
