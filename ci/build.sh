@@ -78,6 +78,18 @@ cd "$WORK/nginx-$NGINX"
 # proxy module to put an upstream behind, and stub_status makes a request
 # left behind in the worker countable.
 
+# --with-stream is what the module's second half needs: config builds
+# src/ngx_stream_geoip2_module.c only when $STREAM is set, so without this
+# those 694 lines are never compiled, and neither the warning gate, CodeQL,
+# the sanitizers nor valgrind ever see them.  A loadable build asks for the
+# subsystem as a loadable object too, which is what a binary from the
+# FreeBSD ports looks like and what sets $STREAM to DYNAMIC rather than YES.
+if [ "$MODE" = dynamic ]; then
+	stream=--with-stream=dynamic
+else
+	stream=--with-stream
+fi
+
 # the sanitizer workflow builds through this script as well, so that
 # there is one build path and not two that drift apart
 set --
@@ -89,7 +101,7 @@ if [ -n "${CI_LD_OPT:-}" ]; then
 fi
 
 echo "--- configure ($MODE) ---"
-./configure --prefix="$PREFIX" --with-debug \
+./configure --prefix="$PREFIX" --with-debug "$stream" \
 	--with-http_ssl_module --with-http_stub_status_module \
 	"$how=$SRC" "$@" > "$WORK/configure-$NGINX.log" 2>&1 ||
 	{ tail -30 "$WORK/configure-$NGINX.log"; exit 1; }
@@ -106,6 +118,18 @@ if grep -E "^$SRC/src/.*warning" "$WORK/make-$NGINX.log"; then
 	echo "ci/build.sh: the compiler warned about this module, see above" >&2
 	exit 1
 fi
+
+# The warning gate above can only report files the build actually saw, so
+# a module source left out of the build makes it quieter, not louder.
+# That is how src/ngx_stream_geoip2_module.c came to be unchecked.  Assert
+# instead that every source this module declares was compiled.
+for part in ngx_http_geoip2_module ngx_stream_geoip2_module; do
+	if ! grep -q "$part\.o" "$WORK/make-$NGINX.log"; then
+		echo "ci/build.sh: $part was not compiled" >&2
+		grep -c . "$WORK/make-$NGINX.log" > /dev/null
+		exit 1
+	fi
+done
 
 make install > /dev/null
 "$PREFIX/sbin/nginx" -v

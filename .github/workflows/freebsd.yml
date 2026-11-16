@@ -48,3 +48,6 @@ jobs:
               TEST_NGINX_NO_SHUFFLE=1 \
             TEST_NGINX_BINARY="$HOME/nginx/sbin/nginx" prove -r t/
             ci/reload.sh "$HOME/nginx/sbin/nginx"
+            # clang compiles the stream half here, so this is the run that
+            # sees its warnings; exercise it too
+            ci/stream.sh "$HOME/nginx/sbin/nginx" t/data/GeoIP2-City-Test.mmdb

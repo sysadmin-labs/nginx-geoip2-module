@@ -61,6 +61,11 @@ jobs:
           TEST_NGINX_NO_SHUFFLE=1 \
             TEST_NGINX_BINARY="$HOME/nginx/sbin/nginx" prove -r t/
 
+      # Test::Nginx speaks HTTP, so the suite above never reaches
+      # src/ngx_stream_geoip2_module.c.  This is that half's gate.
+      - name: Exercise the stream module
+        run: ci/stream.sh "$HOME/nginx/sbin/nginx" t/data/GeoIP2-City-Test.mmdb
+
   dynamic:
     name: loadable module
     needs: pins
@@ -88,3 +93,16 @@ jobs:
           TEST_NGINX_LOAD_MODULES="$mods" \
             TEST_NGINX_NO_SHUFFLE=1 \
             TEST_NGINX_BINARY="$HOME/nginx/sbin/nginx" prove -r t/
+
+      # A loadable build has to produce both objects, and the stream one
+      # has to work when loaded on its own.
+      - name: Exercise the loaded stream module
+        run: |
+          so=$HOME/nginx/modules/ngx_stream_geoip2_module.so
+          test -f "$so" || {
+            echo "the loadable build did not produce $so" >&2
+            ls -l "$HOME/nginx/modules" >&2
+            exit 1
+          }
+          STREAM_LOAD_MODULE=$so \
+            ci/stream.sh "$HOME/nginx/sbin/nginx" t/data/GeoIP2-City-Test.mmdb
