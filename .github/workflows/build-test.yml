@@ -83,14 +83,18 @@ jobs:
       - name: Build the module as a loadable object
         run: ci/build.sh '${{ needs.pins.outputs.version }}' "$HOME/nginx" dynamic
 
-      - name: Run the test suite against the loaded modules
+      - name: Run the test suite against the loaded module
         run: |
-          mods=
-          for so in "$HOME"/nginx/modules/*.so; do
-            mods="$mods $so"
-          done
-          echo "loading:$mods"
-          TEST_NGINX_LOAD_MODULES="$mods" \
+          # Only the HTTP object: that is what this suite asks questions
+          # of, and loading every .so in the directory broke it.  With
+          # --with-stream=dynamic the build also produces
+          # ngx_stream_module.so and ngx_stream_geoip2_module.so, and the
+          # latter resolves ngx_stream_core_module out of the former, so
+          # the order they are loaded in matters -- while the glob yields
+          # alphabetical order, in which ngx_stream_geoip2_module comes
+          # first and nginx refuses to start with "undefined symbol".
+          # ci/stream.sh below loads that pair in the right order.
+          TEST_NGINX_LOAD_MODULES="$HOME/nginx/modules/ngx_http_geoip2_module.so" \
             TEST_NGINX_NO_SHUFFLE=1 \
             TEST_NGINX_BINARY="$HOME/nginx/sbin/nginx" prove -r t/
 
@@ -98,11 +102,16 @@ jobs:
       # has to work when loaded on its own.
       - name: Exercise the loaded stream module
         run: |
-          so=$HOME/nginx/modules/ngx_stream_geoip2_module.so
-          test -f "$so" || {
-            echo "the loadable build did not produce $so" >&2
-            ls -l "$HOME/nginx/modules" >&2
-            exit 1
-          }
-          STREAM_LOAD_MODULE=$so \
+          core=$HOME/nginx/modules/ngx_stream_module.so
+          mod=$HOME/nginx/modules/ngx_stream_geoip2_module.so
+          for so in "$core" "$mod"; do
+            test -f "$so" || {
+              echo "the loadable build did not produce $so" >&2
+              ls -l "$HOME/nginx/modules" >&2
+              exit 1
+            }
+          done
+          # The core object first: the module resolves
+          # ngx_stream_core_module out of it.
+          STREAM_LOAD_MODULE="$core $mod" \
             ci/stream.sh "$HOME/nginx/sbin/nginx" t/data/GeoIP2-City-Test.mmdb

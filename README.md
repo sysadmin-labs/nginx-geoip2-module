@@ -42,14 +42,24 @@ fetched by `ci/testdb.sh`.
 ## Building
 
 ```sh
-./configure --add-module=/path/to/nginx-geoip2-module
+./configure --with-stream --add-module=/path/to/nginx-geoip2-module
 ```
 
-Both the HTTP and the stream module are built. As loadable modules,
-`--add-dynamic-module=` and then
+Two modules are built, one for each subsystem, and the stream one only
+when nginx is configured `--with-stream`. Without it `config` skips that
+source and the HTTP module is all you get.
+
+As loadable objects, `--with-stream=dynamic --add-dynamic-module=`, and
+then
 
 ```nginx
 load_module modules/ngx_http_geoip2_module.so;
+
+# The stream subsystem first: ngx_stream_geoip2_module resolves
+# ngx_stream_core_module out of ngx_stream_module, and nginx refuses to
+# start with "undefined symbol: ngx_stream_core_module" the other way
+# round.  Alphabetical order is the wrong one here.
+load_module modules/ngx_stream_module.so;
 load_module modules/ngx_stream_geoip2_module.so;
 ```
 

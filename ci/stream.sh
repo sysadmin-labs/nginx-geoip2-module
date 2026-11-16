@@ -12,8 +12,15 @@
 #
 #     ci/stream.sh <nginx binary> [path to the test mmdb]
 #
-# Set STREAM_LOAD_MODULE to the path of ngx_stream_geoip2_module.so to
-# exercise a loadable build, STREAM_PORT to move the listener.
+# Set STREAM_LOAD_MODULE to the objects to load, in the order they have to
+# be loaded in, separated by spaces; STREAM_PORT moves the listener.
+#
+# THE ORDER MATTERS.  A loadable stream module resolves
+# ngx_stream_core_module out of ngx_stream_module.so, so that object has to
+# be loaded first: nginx reports "undefined symbol: ngx_stream_core_module"
+# otherwise and refuses to start.  A packager offering this module as a
+# loadable object has the same problem, and alphabetical order is the wrong
+# one -- ngx_stream_geoip2_module sorts before ngx_stream_module.
 #
 # WHAT IS ASSERTED, and why each one is shaped the way it is:
 #
@@ -74,9 +81,11 @@ if [ "$(id -u)" = 0 ]; then
 fi
 
 ngx_load=
-if [ -n "${STREAM_LOAD_MODULE:-}" ]; then
-	ngx_load="load_module $STREAM_LOAD_MODULE;"
-fi
+for so in ${STREAM_LOAD_MODULE:-}; do
+	[ -f "$so" ] || { echo "ci/stream.sh: no such module: $so" >&2; exit 2; }
+	ngx_load="$ngx_load
+load_module $so;"
+done
 
 fail=0
 note() {

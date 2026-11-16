@@ -60,6 +60,12 @@ module that no job had been building.
   carries one field of every mmdb type, and the city database carries none
   of the wider numeric ones, so without it the uint128 conversion above
   could not be reached by a test at all.
+- The README says to configure `--with-stream`, without which the stream
+  module is not built at all, and in what order the loadable objects have
+  to be loaded: `ngx_stream_geoip2_module` resolves
+  `ngx_stream_core_module` out of `ngx_stream_module`, so the subsystem
+  comes first, and alphabetical order is the wrong one. The suite in `t/`
+  loads the HTTP object only, which is what it asks questions of.
 - `ci/stream.sh`, the gate for `src/ngx_stream_geoip2_module.c`.
   Test::Nginx speaks HTTP, so the suite can only ever exercise the HTTP
   half; this one asks a lookup through a stream connection, checks the
