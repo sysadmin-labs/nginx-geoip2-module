@@ -7,6 +7,12 @@
 # than a pinned download.
 #
 #     ci/testdb.sh /tmp/GeoIP2-City-Test.mmdb
+#
+# The decoder database, which carries a field of every mmdb data type, is
+# fetched next to it under the name MaxMind-DB-test-decoder.mmdb.  The city
+# database has none of the wider numeric types, so the conversions for
+# uint64, uint128 and the floating point types are only reachable through
+# that one.
 
 set -eu
 
@@ -20,13 +26,19 @@ PINS=$SRC/.github/versions.env
 
 : "${MMDB_TEST_COMMIT:?MMDB_TEST_COMMIT is not set in $PINS}"
 : "${MMDB_TEST_SHA256:?MMDB_TEST_SHA256 is not set in $PINS}"
+: "${MMDB_DECODER_SHA256:?MMDB_DECODER_SHA256 is not set in $PINS}"
 
-url=https://raw.githubusercontent.com/maxmind/MaxMind-DB/$MMDB_TEST_COMMIT/test-data/GeoIP2-City-Test.mmdb
+base=https://raw.githubusercontent.com/maxmind/MaxMind-DB/$MMDB_TEST_COMMIT/test-data
 
 # curl will not create the directory and fails with exit 23 if it is
 # missing, which reads as a download error rather than as what it is.
 dir=$(dirname "$OUT")
 [ "$dir" = "$OUT" ] || mkdir -p "$dir"
 
-"$SRC/ci/fetch-verify.sh" "$url" "$MMDB_TEST_SHA256" "$OUT"
+"$SRC/ci/fetch-verify.sh" "$base/GeoIP2-City-Test.mmdb" "$MMDB_TEST_SHA256" "$OUT"
 echo "ci/testdb.sh: $OUT"
+
+decoder=$dir/MaxMind-DB-test-decoder.mmdb
+"$SRC/ci/fetch-verify.sh" "$base/MaxMind-DB-test-decoder.mmdb" \
+	"$MMDB_DECODER_SHA256" "$decoder"
+echo "ci/testdb.sh: $decoder"
